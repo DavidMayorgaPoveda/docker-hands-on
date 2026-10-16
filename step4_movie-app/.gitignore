@@ -1,0 +1,10 @@
+.scannerwork/
+**/__pycache__/
+**/.pytest_cache/
+**/.coverage
+**/.coverage.*
+*.py[cod]
+backend/coverage.xml
+backend/junit.xml
+mongo/coverage.xml
+mongo/junit.xml

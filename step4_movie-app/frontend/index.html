@@ -14,22 +14,23 @@
 <body>
     <div class="container">
         <h2>🎬 Movie Category Explorer</h2>
+        <label for="categorySelect">Category</label>
         <select id="categorySelect">
             <option value="">All Categories</option>
             <option value="drama">Drama</option>
             <option value="comedy">Comedy</option>
             <option value="thriller">Thriller</option>
         </select>
-        <button onclick="fetchMovies()">Filter Movies</button>
+        <button id="filterMoviesButton">Filter Movies</button>
 
         <ul id="movieList"></ul>
     </div>
 
-    <script>
+    <script type="module">
         async function fetchMovies() {
             const category = document.getElementById('categorySelect').value;
-            // Updated port to 5001
-            const response = await fetch(`http://localhost:5001/api/movies?category=${category}`);
+
+            const response = await fetch(`/api/movies?category=${category}`);
             const data = await response.json();
 
             const list = document.getElementById('movieList');
@@ -47,8 +48,10 @@
             });
         }
 
+        document.getElementById('filterMoviesButton').addEventListener('click', fetchMovies);
+
         // Initial load
-        fetchMovies();
+        await fetchMovies();
     </script>
 </body>
 </html>
