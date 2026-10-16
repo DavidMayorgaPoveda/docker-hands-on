@@ -39,7 +39,7 @@ jobs:
           node --check /tmp/frontend-inline.mjs
 
       - name: Validate Nginx configuration
-        run: docker run --rm --volume "$GITHUB_WORKSPACE/step4_movie-app/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+        run: docker run --rm --add-host backend:127.0.0.1 --volume "$GITHUB_WORKSPACE/step4_movie-app/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
 
       - name: Build frontend image
         run: docker build --tag movie-explorer-frontend:ci --file step4_movie-app/frontend/Dockerfile step4_movie-app/frontend
