@@ -28,4 +28,9 @@ jobs:
       - name: Analyze with SonarQube
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: sonar-scanner -Dsonar.qualitygate.wait=true
+        run: |
+          PYSONAR_BIN="${HOME}/.local/bin/pysonar"
+          if [ ! -x "$PYSONAR_BIN" ]; then
+            PYSONAR_BIN="$(command -v pysonar)"
+          fi
+          "$PYSONAR_BIN" --sonar-qualitygate-wait
