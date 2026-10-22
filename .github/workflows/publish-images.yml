@@ -1,0 +1,71 @@
+name: Publish Docker Hub Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Trusted source to publish (main or a release tag)
+        required: true
+        type: choice
+        options:
+          - main
+          - release-tag
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish versioned images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate authorized ref
+        env:
+          SOURCE: ${{ inputs.source }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE" == "main" && "$REF" != "refs/heads/main" ]]; then
+            echo "Select this workflow from the main branch to publish main."
+            exit 1
+          fi
+          if [[ "$SOURCE" == "release-tag" && ! "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release runs require a trusted vX.Y.Z tag."
+            exit 1
+          fi
+
+      - name: Check out authorized source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Resolve checked-out commit SHA
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: step4_movie-app/backend
+          push: true
+          tags: davidmayorga/movie-explorer-backend:${{ steps.source.outputs.sha }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: step4_movie-app/frontend
+          push: true
+          tags: davidmayorga/movie-explorer-frontend:${{ steps.source.outputs.sha }}
+
+      - name: Build and push MongoDB initialization image
+        uses: docker/build-push-action@v6
+        with:
+          context: step4_movie-app/mongo
+          push: true
+          tags: davidmayorga/movie-explorer-mongodb:${{ steps.source.outputs.sha }}
