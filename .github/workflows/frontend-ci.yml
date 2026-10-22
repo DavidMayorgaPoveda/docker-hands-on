@@ -1,0 +1,45 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'step4_movie-app/frontend/**'
+      - 'step4_movie-app/nginx/default.conf'
+      - 'step4_movie-app/compose.yaml'
+      - '.github/workflows/frontend-ci.yml'
+  push:
+    paths:
+      - 'step4_movie-app/frontend/**'
+      - 'step4_movie-app/nginx/default.conf'
+      - 'step4_movie-app/compose.yaml'
+      - '.github/workflows/frontend-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-ci:
+    name: Frontend validation and image build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate frontend JavaScript syntax
+        run: |
+          python3 -c "from pathlib import Path; import re; html = Path('step4_movie-app/frontend/index.html').read_text(); match = re.search(r'<script type=[\"]module[\"]>(.*?)</script>', html, re.DOTALL); assert match, 'Module script not found'; Path('/tmp/frontend-inline.mjs').write_text(match.group(1))"
+          node --check /tmp/frontend-inline.mjs
+
+      - name: Validate Nginx configuration
+        run: docker run --rm --add-host backend:127.0.0.1 --volume "$GITHUB_WORKSPACE/step4_movie-app/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+
+      - name: Build frontend image
+        run: docker build --tag movie-explorer-frontend:ci --file step4_movie-app/frontend/Dockerfile step4_movie-app/frontend

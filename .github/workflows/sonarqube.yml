@@ -1,0 +1,31 @@
+name: SonarQube Analysis
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonarqube-movie-app
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Test and analyze movie-app
+    runs-on: [self-hosted, linux, x64, sonarqube]
+    defaults:
+      run:
+        working-directory: step4_movie-app
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Generate test and coverage reports
+        run: make test
+
+      - name: Analyze with SonarQube
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: sonar-scanner -Dsonar.qualitygate.wait=true

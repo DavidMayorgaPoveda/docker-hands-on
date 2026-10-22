@@ -1,0 +1,135 @@
+name: Database CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'step4_movie-app/mongo/**'
+      - 'step4_movie-app/Makefile'
+      - 'step4_movie-app/compose.yaml'
+      - '.github/workflows/database-ci.yml'
+  push:
+    paths:
+      - 'step4_movie-app/mongo/**'
+      - 'step4_movie-app/Makefile'
+      - 'step4_movie-app/compose.yaml'
+      - '.github/workflows/database-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  database-ci:
+    name: MongoDB tests and initialization
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run MongoDB unit tests
+        run: make -C step4_movie-app test-mongo
+
+      - name: Verify MongoDB initialization and persistence
+        env:
+          DB_CI_SUFFIX: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          network="database-ci-network-${DB_CI_SUFFIX}"
+          volume="database-ci-volume-${DB_CI_SUFFIX}"
+          container="database-ci-mongo-${DB_CI_SUFFIX}"
+          init_dir="$GITHUB_WORKSPACE/step4_movie-app/mongo"
+
+          docker network create "$network"
+          docker volume create "$volume"
+
+          start_mongo() {
+            docker run --detach \
+              --name "$container" \
+              --network "$network" \
+              --volume "$volume:/data/db" \
+              --volume "$init_dir/init.sh:/docker-entrypoint-initdb.d/init.sh:ro" \
+              --volume "$init_dir/init.json:/docker-entrypoint-initdb.d/init.json:ro" \
+              mongo:6.0
+          }
+
+          wait_for_mongo() {
+            for attempt in $(seq 1 60); do
+              if docker exec "$container" mongosh --quiet --eval 'db.adminCommand("ping").ok' >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs "$container"
+            return 1
+          }
+
+          wait_for_initialization() {
+            for attempt in $(seq 1 60); do
+              if docker logs "$container" 2>&1 | grep -Fq 'Movie data imported successfully.'; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs "$container"
+            return 1
+          }
+
+          verify_movies() {
+            docker exec "$container" mongosh --quiet movies_db --eval '
+              const expected = [
+                ["The Shawshank Redemption", 1994, "drama"],
+                ["The Dark Knight", 2008, "thriller"],
+                ["Superbad", 2007, "comedy"],
+                ["Pulp Fiction", 1994, "drama"],
+                ["The Hangover", 2009, "comedy"],
+                ["Se7en", 1995, "thriller"]
+              ].sort((a, b) => a[0].localeCompare(b[0]));
+              const count = db.movies.countDocuments({});
+              const actual = db.movies.find({}, { _id: 0, title: 1, year: 1, category: 1 })
+                .toArray()
+                .map(movie => [movie.title, movie.year, movie.category])
+                .sort((a, b) => a[0].localeCompare(b[0]));
+              if (count !== 6) {
+                throw new Error(`Expected exactly six movies, found ${count}`);
+              }
+              if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                throw new Error(`Movie data mismatch: ${JSON.stringify(actual)}`);
+              }
+              print(`Verified ${count} movies with expected titles, years, and categories.`);
+            '
+          }
+
+          start_mongo
+          wait_for_mongo
+          wait_for_initialization
+          docker logs "$container" 2>&1 | grep -F 'Movie data imported successfully.'
+          verify_movies
+
+          docker rm --force "$container"
+          start_mongo
+          wait_for_mongo
+          if docker logs "$container" 2>&1 | grep -Fq 'Importing initial movie data...'; then
+            echo 'MongoDB initialization unexpectedly ran again on the existing data volume.'
+            exit 1
+          fi
+          verify_movies
+
+      - name: Upload MongoDB JUnit report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-test-report
+          path: step4_movie-app/mongo/junit.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Remove temporary MongoDB resources
+        if: ${{ always() }}
+        env:
+          DB_CI_SUFFIX: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          docker rm --force "database-ci-mongo-${DB_CI_SUFFIX}" 2>/dev/null || true
+          docker network rm "database-ci-network-${DB_CI_SUFFIX}" 2>/dev/null || true
+          docker volume rm "database-ci-volume-${DB_CI_SUFFIX}" 2>/dev/null || true
