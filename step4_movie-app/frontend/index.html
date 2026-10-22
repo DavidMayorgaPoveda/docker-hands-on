@@ -6,7 +6,7 @@
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f6f8; }
         .container { max-width: 600px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        select, button { padding: 8px 12px; font-size: 14px; margin-right: 10px; }
+        select, button, input { padding: 8px 12px; font-size: 14px; margin: 6px 6px 6px 0; }
         ul { list-style-type: none; padding: 0; margin-top: 20px; }
         li { background: #eef2f5; margin: 5px 0; padding: 10px; border-radius: 4px; }
     </style>
@@ -22,6 +22,11 @@
             <option value="thriller">Thriller</option>
         </select>
         <button id="filterMoviesButton">Filter Movies</button>
+        <div><label for="preferences">Preferences</label>
+        <input id="preferences" maxlength="300" placeholder="I want to cry, funny movies, good ending"></div>
+        <button id="recommendButton">Recommend movies</button>
+        <p id="recommendationStatus" aria-live="polite"></p>
+        <ul id="recommendationList"></ul>
 
         <ul id="movieList"></ul>
     </div>
@@ -49,6 +54,34 @@
         }
 
         document.getElementById('filterMoviesButton').addEventListener('click', fetchMovies);
+
+        document.getElementById('recommendButton').addEventListener('click', async () => {
+            const button = document.getElementById('recommendButton');
+            const status = document.getElementById('recommendationStatus');
+            const list = document.getElementById('recommendationList');
+            button.disabled = true;
+            status.textContent = 'Generating recommendations…';
+            list.replaceChildren();
+            try {
+                const response = await fetch('/api/recommendations', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category: document.getElementById('categorySelect').value,
+                        preferences: document.getElementById('preferences').value
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Recommendation request failed.');
+                data.recommendations.forEach(movie => {
+                    const li = document.createElement('li');
+                    li.textContent = `${movie.title}: ${movie.reason}`;
+                    list.appendChild(li);
+                });
+                status.textContent = data.recommendations.length ? 'Recommendations from our catalog:' : (data.message || 'No suitable recommendations found.');
+            } catch (error) {
+                status.textContent = error.message;
+            } finally { button.disabled = false; }
+        });
 
         // Initial load
         await fetchMovies();

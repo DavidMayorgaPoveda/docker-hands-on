@@ -20,9 +20,17 @@ services:
       - "5001:5000"
     environment:
       MONGO_URI: mongodb://mongo:27017/movies_db
+      OLLAMA_URL: http://ollama:11434
     depends_on:
       mongo:
         condition: service_healthy
+    networks:
+      - movie-net
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
     networks:
       - movie-net
 
@@ -43,3 +51,4 @@ networks:
 
 volumes:
   mongo-data:
+  ollama-data:
