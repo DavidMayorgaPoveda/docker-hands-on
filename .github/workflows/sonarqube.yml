@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sonarqube-movie-app
+  group: movie-app-self-hosted
   cancel-in-progress: false
 
 jobs:
