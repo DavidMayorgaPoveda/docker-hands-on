@@ -1,0 +1,259 @@
+name: Deploy Movie Explorer
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Optional SHA of a previously published commit on main (for redeploy or rollback)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: movie-app-self-hosted
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy published Movie Explorer images
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, sonarqube, movie-app-deploy]
+    defaults:
+      run:
+        working-directory: step4_movie-app
+
+    steps:
+      - name: Start deployment timer
+        id: timer
+        run: echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out main source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve and validate trusted source commit
+        id: source
+        env:
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Deployment is only allowed from the trusted main branch."
+            exit 1
+          fi
+
+          git fetch --no-tags origin main
+          source_sha="${REQUESTED_SHA:-$GITHUB_SHA}"
+          if [[ ! "$source_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "source_sha must be a full 40-character commit SHA."
+            exit 1
+          fi
+          source_sha="${source_sha,,}"
+          if ! git cat-file -e "${source_sha}^{commit}"; then
+            echo "Commit $source_sha is not available in this checkout."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$source_sha" origin/main; then
+            echo "Commit $source_sha is not part of the trusted main history."
+            exit 1
+          fi
+
+          git checkout --detach "$source_sha"
+          resolved_sha="$(git rev-parse HEAD)"
+          echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=$resolved_sha" >> "$GITHUB_ENV"
+          echo "COMPOSE_PROJECT_NAME=step4_movie-app" >> "$GITHUB_ENV"
+          echo "Deploying trusted main commit $resolved_sha"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Confirm deployment host and persistent data
+        run: |
+          set -euo pipefail
+          docker info --format 'Docker Engine {{.ServerVersion}} on {{.OperatingSystem}}'
+          docker compose version
+
+          for volume in step4_movie-app_mongo-data step4_movie-app_ollama-data; do
+            if ! docker volume inspect "$volume" >/dev/null; then
+              echo "Required existing volume $volume is missing; refusing to create an empty replacement."
+              exit 1
+            fi
+          done
+          docker network inspect step4_movie-app_movie-net >/dev/null || {
+            echo "Existing Compose network step4_movie-app_movie-net is missing."
+            exit 1
+          }
+
+          compose=(docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f compose.deploy.yaml)
+          mongo_id="$("${compose[@]}" ps -q mongo)"
+          ollama_id="$("${compose[@]}" ps -q ollama)"
+          if [[ -z "$mongo_id" || -z "$ollama_id" ]]; then
+            echo "The existing MongoDB and Ollama containers must be running before deployment."
+            exit 1
+          fi
+
+          mongo_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data/db"}}{{.Name}}{{end}}{{end}}' "$mongo_id")"
+          ollama_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/root/.ollama"}}{{.Name}}{{end}}{{end}}' "$ollama_id")"
+          [[ "$mongo_volume" == "step4_movie-app_mongo-data" ]] || {
+            echo "MongoDB is using unexpected data volume: $mongo_volume"
+            exit 1
+          }
+          [[ "$ollama_volume" == "step4_movie-app_ollama-data" ]] || {
+            echo "Ollama is using unexpected model volume: $ollama_volume"
+            exit 1
+          }
+
+          model_list="$("${compose[@]}" exec -T ollama ollama list)"
+          printf '%s\n' "$model_list"
+          grep -Eq '^gemma3:1b[[:space:]]' <<< "$model_list" || {
+            echo "gemma3:1b is missing from the existing Ollama volume; refusing to download it during deployment."
+            exit 1
+          }
+
+      - name: Confirm all published images exist
+        run: |
+          set -euo pipefail
+          images=(
+            "davidmayorga/movie-explorer-backend:${IMAGE_TAG}"
+            "davidmayorga/movie-explorer-frontend:${IMAGE_TAG}"
+            "davidmayorga/movie-explorer-mongodb:${IMAGE_TAG}"
+          )
+          for image in "${images[@]}"; do
+            echo "Checking Docker Hub image $image"
+            if ! docker manifest inspect "$image" >/dev/null; then
+              echo "Image $image is not published; no services have been updated."
+              exit 1
+            fi
+          done
+
+          expected_images="$(printf '%s\n' "${images[@]}" | sort)"
+          configured_images="$(docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f compose.deploy.yaml config --images | grep '^davidmayorga/movie-explorer-' | sort)"
+          if [[ "$configured_images" != "$expected_images" ]]; then
+            echo "Resolved Compose images do not match the three requested SHA-tagged images."
+            printf 'Expected:\n%s\nConfigured:\n%s\n' "$expected_images" "$configured_images"
+            exit 1
+          fi
+
+      - name: Save currently deployed image references
+        id: previous
+        run: |
+          set -euo pipefail
+          compose=(docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f compose.deploy.yaml)
+          for service in backend frontend mongo; do
+            container_id="$("${compose[@]}" ps -q "$service")"
+            if [[ -n "$container_id" ]]; then
+              image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+            else
+              image="none"
+            fi
+            echo "$service=$image" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Pull published images before updating services
+        run: |
+          set -euo pipefail
+          docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f compose.deploy.yaml pull mongo backend frontend
+
+      - name: Update the existing Compose project without building
+        run: |
+          set -euo pipefail
+          docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f compose.deploy.yaml \
+            up --detach --no-build --pull never --wait --wait-timeout 240 \
+            mongo backend ollama frontend
+
+      - name: Verify deployed images, health, catalog and model
+        run: |
+          set -euo pipefail
+          compose=(docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml -f compose.deploy.yaml)
+
+          for service in mongo backend frontend; do
+            container_id="$("${compose[@]}" ps -q "$service")"
+            actual_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+            case "$service" in
+              mongo) expected_image="davidmayorga/movie-explorer-mongodb:${IMAGE_TAG}" ;;
+              backend) expected_image="davidmayorga/movie-explorer-backend:${IMAGE_TAG}" ;;
+              frontend) expected_image="davidmayorga/movie-explorer-frontend:${IMAGE_TAG}" ;;
+            esac
+            [[ "$actual_image" == "$expected_image" ]] || {
+              echo "$service is running $actual_image, expected $expected_image"
+              exit 1
+            }
+          done
+
+          mongo_id="$("${compose[@]}" ps -q mongo)"
+          mongo_health="$(docker inspect --format '{{.State.Health.Status}}' "$mongo_id")"
+          [[ "$mongo_health" == "healthy" ]] || {
+            docker logs --tail 100 "$mongo_id"
+            echo "MongoDB health status is $mongo_health."
+            exit 1
+          }
+
+          ollama_id="$("${compose[@]}" ps -q ollama)"
+          ollama_health="$(docker inspect --format '{{.State.Health.Status}}' "$ollama_id")"
+          [[ "$ollama_health" == "healthy" ]] || {
+            docker logs --tail 100 "$ollama_id"
+            echo "Ollama health status is $ollama_health."
+            exit 1
+          }
+          model_list="$("${compose[@]}" exec -T ollama ollama list)"
+          printf '%s\n' "$model_list"
+          grep -Eq '^gemma3:1b[[:space:]]' <<< "$model_list" || {
+            echo "gemma3:1b is no longer available in the persistent Ollama volume."
+            exit 1
+          }
+
+          curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-connrefused \
+            --output /dev/null http://localhost:8181/
+          movies_json="$(curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-connrefused \
+            http://localhost:8181/api/movies)"
+          printf '%s' "$movies_json" | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          expected = {
+              "Pulp Fiction", "Se7en", "Superbad", "The Dark Knight",
+              "The Hangover", "The Shawshank Redemption"
+          }
+          actual = {movie["title"] for movie in payload["movies"]}
+          if payload.get("count") != 6 or actual != expected:
+              raise SystemExit(f"Unexpected catalog response: {payload}")
+          print("Nginx /api/movies returned all six expected movies.")
+          '
+
+      - name: Report deployment result and duration
+        if: always()
+        env:
+          DEPLOY_STATUS: ${{ job.status }}
+          DEPLOY_SHA: ${{ steps.source.outputs.sha }}
+          TIMER_START: ${{ steps.timer.outputs.started_at }}
+          PREVIOUS_BACKEND: ${{ steps.previous.outputs.backend }}
+          PREVIOUS_FRONTEND: ${{ steps.previous.outputs.frontend }}
+          PREVIOUS_MONGO: ${{ steps.previous.outputs.mongo }}
+        run: |
+          set -euo pipefail
+          started_at="${TIMER_START:-$(date +%s)}"
+          ended_at="$(date +%s)"
+          duration=$((ended_at - started_at))
+          deploy_sha="${DEPLOY_SHA:-not-resolved}"
+          {
+            echo "## Movie Explorer deployment"
+            echo
+            echo "- **Status:** ${DEPLOY_STATUS}"
+            echo "- **Commit SHA:** ${deploy_sha}"
+            echo "- **Duration:** ${duration} seconds"
+            echo "- **Project:** ${COMPOSE_PROJECT_NAME:-step4_movie-app}"
+            echo "- **Backend:** davidmayorga/movie-explorer-backend:${deploy_sha}"
+            echo "- **Frontend:** davidmayorga/movie-explorer-frontend:${deploy_sha}"
+            echo "- **MongoDB initializer:** davidmayorga/movie-explorer-mongodb:${deploy_sha}"
+            echo "- **Previous backend image:** ${PREVIOUS_BACKEND:-unknown}"
+            echo "- **Previous frontend image:** ${PREVIOUS_FRONTEND:-unknown}"
+            echo "- **Previous MongoDB image:** ${PREVIOUS_MONGO:-unknown}"
+            echo "- **Ollama model:** gemma3:1b (verified in the existing named volume; no pull command is run)"
+          } >> "$GITHUB_STEP_SUMMARY"

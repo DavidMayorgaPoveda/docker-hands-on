@@ -1,0 +1,43 @@
+services:
+  mongo:
+    image: davidmayorga/movie-explorer-mongodb:${IMAGE_TAG:?IMAGE_TAG must be set to a published commit SHA}
+
+  backend:
+    build: !reset null
+    image: davidmayorga/movie-explorer-backend:${IMAGE_TAG:?IMAGE_TAG must be set to a published commit SHA}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/movies', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ollama:
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build: !reset null
+    image: davidmayorga/movie-explorer-frontend:${IMAGE_TAG:?IMAGE_TAG must be set to a published commit SHA}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
