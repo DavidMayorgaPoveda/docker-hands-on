@@ -2,89 +2,311 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111418">
+    <meta name="description" content="Explore the Movie Explorer catalog and get recommendations based on what you enjoy.">
     <title>Movie Explorer</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f6f8; }
-        .container { max-width: 600px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        select, button, input { padding: 8px 12px; font-size: 14px; margin: 6px 6px 6px 0; }
-        ul { list-style-type: none; padding: 0; margin-top: 20px; }
-        li { background: #eef2f5; margin: 5px 0; padding: 10px; border-radius: 4px; }
+        :root {
+            color-scheme: dark;
+            --page: #111418;
+            --panel: #191e24;
+            --panel-raised: #20262e;
+            --line: #303741;
+            --text: #f1f3f5;
+            --muted: #a0a8b3;
+            --accent: #83b5a2;
+            --accent-strong: #a3d2bf;
+            --danger: #e2a19a;
+            --radius: 12px;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { margin: 0; background: var(--page); color: var(--text); line-height: 1.55; }
+        button, textarea { font: inherit; }
+        button:focus-visible, textarea:focus-visible, a:focus-visible {
+            outline: 3px solid var(--accent-strong); outline-offset: 3px;
+        }
+        a { color: inherit; text-decoration: none; }
+        .shell { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+        .topbar { border-bottom: 1px solid #252b32; }
+        .topbar-inner { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+        .brand { display: inline-flex; align-items: center; gap: 11px; font-size: 16px; font-weight: 650; letter-spacing: -.02em; }
+        .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #42584f; border-radius: 9px; color: var(--accent-strong); background: #1b2924; }
+        .brand-mark svg { width: 18px; height: 18px; }
+        .nav { display: flex; gap: 26px; color: var(--muted); font-size: 13px; }
+        .nav a:hover { color: var(--text); }
+        main { padding: 52px 0 76px; }
+        .intro { max-width: 700px; margin-bottom: 34px; }
+        .eyebrow { margin: 0 0 9px; color: var(--accent-strong); font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+        h1, h2, h3, p { margin-top: 0; }
+        h1 { margin-bottom: 12px; font-size: clamp(30px, 4vw, 42px); line-height: 1.12; letter-spacing: -.045em; font-weight: 650; }
+        .intro-copy { max-width: 590px; margin: 0; color: var(--muted); font-size: 15px; }
+        .workspace { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, .85fr); align-items: start; gap: 24px; }
+        .section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; margin-bottom: 17px; }
+        .section-heading h2, .recommend-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.025em; font-weight: 620; }
+        .count { color: var(--muted); font-size: 12px; }
+        .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+        .filter-button { min-height: 35px; padding: 6px 13px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: #bac1ca; cursor: pointer; font-size: 12px; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+        .filter-button:hover { border-color: #53605e; color: var(--text); }
+        .filter-button[aria-pressed="true"] { border-color: #527568; background: #20342d; color: #c1e1d4; }
+        .movie-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .movie-card { min-height: 124px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+        .movie-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; color: var(--muted); font-size: 11px; }
+        .category { color: #c1e1d4; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+        .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: #69737e; }
+        .movie-card h3 { margin: 0; font-size: 16px; font-weight: 590; line-height: 1.35; letter-spacing: -.015em; }
+        .empty-state { grid-column: 1 / -1; padding: 24px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); text-align: center; }
+        .recommend-panel { padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+        .recommend-heading { margin-bottom: 8px; }
+        .recommend-copy { margin: 0 0 21px; color: var(--muted); font-size: 13px; }
+        .field-label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+        .textarea-wrap { position: relative; }
+        textarea { display: block; width: 100%; min-height: 112px; resize: vertical; padding: 12px 13px 27px; border: 1px solid #3a424c; border-radius: 8px; background: #12161b; color: var(--text); font-size: 13px; line-height: 1.5; }
+        textarea::placeholder { color: #737d88; }
+        .char-count { position: absolute; right: 11px; bottom: 8px; color: #78828d; font-size: 10px; pointer-events: none; }
+        .field-hint { margin: 7px 0 16px; color: #858e99; font-size: 11px; }
+        .primary-button { display: inline-flex; width: 100%; min-height: 42px; align-items: center; justify-content: center; gap: 9px; padding: 9px 14px; border: 1px solid #6e9b89; border-radius: 8px; background: #365c4e; color: #f2f7f4; cursor: pointer; font-size: 13px; font-weight: 630; transition: background-color .15s ease; }
+        .primary-button:hover:not(:disabled) { background: #416c5c; }
+        .primary-button:disabled { cursor: wait; opacity: .68; }
+        .button-icon { width: 15px; height: 15px; }
+        .results { margin-top: 22px; }
+        .results[hidden] { display: none; }
+        .results-heading { margin: 0 0 12px; color: #c6cdd4; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+        .result-list { display: grid; gap: 9px; }
+        .result-card { padding: 13px; border: 1px solid #35443e; border-radius: 9px; background: #1b2722; }
+        .result-title-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+        .result-rank { color: var(--accent-strong); font-size: 10px; font-weight: 700; }
+        .result-card h3 { margin: 0; font-size: 13px; font-weight: 620; }
+        .result-card p { margin: 0; color: #aebbb4; font-size: 12px; }
+        .status { min-height: 20px; margin: 11px 0 0; color: var(--muted); font-size: 12px; }
+        .status[data-kind="error"] { color: var(--danger); }
+        .status[data-kind="success"] { color: var(--accent-strong); }
+        footer { border-top: 1px solid #252b32; color: #7e8791; font-size: 11px; }
+        footer .shell { padding: 17px 0; }
+
+        @media (max-width: 760px) {
+            .shell { width: min(100% - 36px, 600px); }
+            main { padding: 38px 0 54px; }
+            .workspace { grid-template-columns: 1fr; gap: 30px; }
+            .recommend-panel { grid-row: 1; }
+            .movie-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 480px) {
+            .shell { width: calc(100% - 32px); }
+            .topbar-inner { min-height: 64px; }
+            .nav { gap: 16px; font-size: 12px; }
+            .brand { font-size: 14px; }
+            .brand-mark { width: 31px; height: 31px; }
+            main { padding-top: 32px; }
+            .intro { margin-bottom: 27px; }
+            .intro-copy { font-size: 14px; }
+            .movie-grid { grid-template-columns: 1fr; }
+            .movie-card { min-height: 106px; }
+            .recommend-panel { padding: 19px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>🎬 Movie Category Explorer</h2>
-        <label for="categorySelect">Category</label>
-        <select id="categorySelect">
-            <option value="">All Categories</option>
-            <option value="drama">Drama</option>
-            <option value="comedy">Comedy</option>
-            <option value="thriller">Thriller</option>
-        </select>
-        <button id="filterMoviesButton">Filter Movies</button>
-        <div><label for="preferences">Preferences</label>
-        <input id="preferences" maxlength="300" placeholder="I want to cry, funny movies, good ending"></div>
-        <button id="recommendButton">Recommend movies</button>
-        <p id="recommendationStatus" aria-live="polite"></p>
-        <ul id="recommendationList"></ul>
+    <header class="topbar">
+        <div class="shell topbar-inner">
+            <a class="brand" href="#top" aria-label="Movie Explorer home">
+                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="m8 5 4 5 4-5M8 19l4-5 4 5"></path></svg></span>
+                <span>Movie Explorer</span>
+            </a>
+            <nav class="nav" aria-label="Main navigation">
+                <a href="#catalog">Catalog</a>
+                <a href="#recommendations">Recommendations</a>
+            </nav>
+        </div>
+    </header>
 
-        <ul id="movieList"></ul>
-    </div>
+    <main class="shell" id="top">
+        <section class="intro" aria-labelledby="page-title">
+            <p class="eyebrow">A small catalog, thoughtfully explored</p>
+            <h1 id="page-title">Find your next movie.</h1>
+            <p class="intro-copy">Browse the collection by category or tell us what you are in the mood for. Recommendations are selected from the movies available here.</p>
+        </section>
+
+        <div class="workspace">
+            <section id="catalog" aria-labelledby="catalog-title">
+                <div class="section-heading">
+                    <h2 id="catalog-title">The catalog</h2>
+                    <span class="count" id="movieCount" aria-live="polite">Loading movies…</span>
+                </div>
+                <div class="filters" role="group" aria-label="Filter movies by category">
+                    <button class="filter-button" type="button" data-category="" aria-pressed="true">All movies</button>
+                    <button class="filter-button" type="button" data-category="drama" aria-pressed="false">Drama</button>
+                    <button class="filter-button" type="button" data-category="comedy" aria-pressed="false">Comedy</button>
+                    <button class="filter-button" type="button" data-category="thriller" aria-pressed="false">Thriller</button>
+                </div>
+                <div class="movie-grid" id="movieList" aria-live="polite" aria-busy="true"></div>
+            </section>
+
+            <section class="recommend-panel" id="recommendations" aria-labelledby="recommend-title">
+                <div class="recommend-heading"><h2 id="recommend-title">Get a recommendation</h2></div>
+                <p class="recommend-copy">Share a mood, theme or kind of story. We will look for a match in the catalog.</p>
+                <form id="recommendForm">
+                    <label class="field-label" for="preferences">What would you like to watch?</label>
+                    <div class="textarea-wrap">
+                        <textarea id="preferences" name="preferences" maxlength="300" placeholder="For example: a clever comedy for a relaxed evening" aria-describedby="preferenceHint charCount"></textarea>
+                        <span class="char-count" id="charCount" aria-live="polite">0 / 300</span>
+                    </div>
+                    <p class="field-hint" id="preferenceHint">Optional. Choose a category above to narrow the results.</p>
+                    <button class="primary-button" id="recommendButton" type="submit">
+                        <svg class="button-icon" aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5v3M10 14.5v3M2.5 10h3m9 0h3M4.7 4.7l2.1 2.1m6.4 6.4 2.1 2.1m0-10.6-2.1 2.1m-6.4 6.4-2.1 2.1"></path><circle cx="10" cy="10" r="3"></circle></svg>
+                        <span>Find a movie</span>
+                    </button>
+                </form>
+                <div class="results" id="recommendationResults" hidden>
+                    <h3 class="results-heading">Your matches</h3>
+                    <div class="result-list" id="recommendationList"></div>
+                </div>
+                <p class="status" id="recommendationStatus" role="status" aria-live="polite"></p>
+            </section>
+        </div>
+    </main>
+
+    <footer><div class="shell">Movie Explorer · A focused movie catalog project</div></footer>
 
     <script type="module">
-        async function fetchMovies() {
-            const category = document.getElementById('categorySelect').value;
+        const movieList = document.getElementById('movieList');
+        const movieCount = document.getElementById('movieCount');
+        const categoryButtons = [...document.querySelectorAll('.filter-button')];
+        const preferenceInput = document.getElementById('preferences');
+        const recommendationForm = document.getElementById('recommendForm');
+        const recommendationButton = document.getElementById('recommendButton');
+        const recommendationStatus = document.getElementById('recommendationStatus');
+        const recommendationResults = document.getElementById('recommendationResults');
+        const recommendationList = document.getElementById('recommendationList');
+        let selectedCategory = '';
 
-            const response = await fetch(`/api/movies?category=${category}`);
-            const data = await response.json();
+        function setStatus(message, kind = '') {
+            recommendationStatus.textContent = message;
+            recommendationStatus.dataset.kind = kind;
+        }
 
-            const list = document.getElementById('movieList');
-            list.innerHTML = '';
+        function showMovieMessage(message) {
+            const item = document.createElement('p');
+            item.className = 'empty-state';
+            item.textContent = message;
+            movieList.replaceChildren(item);
+        }
 
-            if (!data.movies || data.movies.length === 0) {
-                list.innerHTML = '<li>No movies found.</li>';
+        function renderMovies(movies) {
+            movieList.replaceChildren();
+            if (!movies.length) {
+                showMovieMessage('No movies found in this category.');
                 return;
             }
 
-            data.movies.forEach(movie => {
-                const li = document.createElement('li');
-                li.textContent = `${movie.title} (${movie.year}) - [${movie.category.toUpperCase()}]`;
-                list.appendChild(li);
+            const cards = movies.map((movie) => {
+                const card = document.createElement('article');
+                card.className = 'movie-card';
+                const meta = document.createElement('div');
+                meta.className = 'movie-meta';
+                const category = document.createElement('span');
+                category.className = 'category';
+                category.textContent = movie.category;
+                const dot = document.createElement('span');
+                dot.className = 'meta-dot';
+                dot.setAttribute('aria-hidden', 'true');
+                const year = document.createElement('span');
+                year.textContent = movie.year;
+                const title = document.createElement('h3');
+                title.textContent = movie.title;
+                meta.append(category, dot, year);
+                card.append(meta, title);
+                return card;
             });
+            movieList.replaceChildren(...cards);
         }
 
-        document.getElementById('filterMoviesButton').addEventListener('click', fetchMovies);
-
-        document.getElementById('recommendButton').addEventListener('click', async () => {
-            const button = document.getElementById('recommendButton');
-            const status = document.getElementById('recommendationStatus');
-            const list = document.getElementById('recommendationList');
-            button.disabled = true;
-            status.textContent = 'Generating recommendations…';
-            list.replaceChildren();
+        async function fetchMovies() {
+            movieList.setAttribute('aria-busy', 'true');
+            movieCount.textContent = 'Loading movies…';
             try {
-                const response = await fetch('/api/recommendations', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        category: document.getElementById('categorySelect').value,
-                        preferences: document.getElementById('preferences').value
-                    })
-                });
+                const response = await fetch(`/api/movies?category=${encodeURIComponent(selectedCategory)}`);
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || 'Recommendation request failed.');
-                data.recommendations.forEach(movie => {
-                    const li = document.createElement('li');
-                    li.textContent = `${movie.title}: ${movie.reason}`;
-                    list.appendChild(li);
-                });
-                status.textContent = data.recommendations.length ? 'Recommendations from our catalog:' : (data.message || 'No suitable recommendations found.');
+                if (!response.ok) throw new Error(data.error || 'Could not load the catalog.');
+                const movies = Array.isArray(data.movies) ? data.movies : [];
+                renderMovies(movies);
+                movieCount.textContent = `${data.count ?? movies.length} ${((data.count ?? movies.length) === 1) ? 'movie' : 'movies'}`;
             } catch (error) {
-                status.textContent = error.message;
-            } finally { button.disabled = false; }
+                showMovieMessage(error.message || 'Could not load the catalog. Please try again.');
+                movieCount.textContent = 'Catalog unavailable';
+            } finally {
+                movieList.setAttribute('aria-busy', 'false');
+            }
+        }
+
+        categoryButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                selectedCategory = button.dataset.category;
+                categoryButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+                fetchMovies();
+            });
         });
 
-        // Initial load
-        await fetchMovies();
+        preferenceInput.addEventListener('input', () => {
+            document.getElementById('charCount').textContent = `${preferenceInput.value.length} / 300`;
+        });
+
+        recommendationForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            recommendationButton.disabled = true;
+            recommendationButton.querySelector('span').textContent = 'Finding a match…';
+            recommendationResults.hidden = true;
+            recommendationList.replaceChildren();
+            setStatus('Checking the catalog against your preferences…');
+
+            try {
+                const response = await fetch('/api/recommendations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category: selectedCategory, preferences: preferenceInput.value.trim() })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Could not get recommendations. Please try again.');
+
+                const recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
+                if (!recommendations.length) {
+                    setStatus(data.message || data.reason || 'No suitable movies found. Try another preference or category.');
+                    return;
+                }
+
+                recommendations.slice(0, 3).forEach((movie, index) => {
+                    const card = document.createElement('article');
+                    card.className = 'result-card';
+                    const titleRow = document.createElement('div');
+                    titleRow.className = 'result-title-row';
+                    const rank = document.createElement('span');
+                    rank.className = 'result-rank';
+                    rank.textContent = String(index + 1).padStart(2, '0');
+                    const title = document.createElement('h3');
+                    title.textContent = movie.title;
+                    const reason = document.createElement('p');
+                    reason.textContent = movie.reason || 'Selected from the available catalog.';
+                    titleRow.append(rank, title);
+                    card.append(titleRow, reason);
+                    recommendationList.append(card);
+                });
+                recommendationResults.hidden = false;
+                setStatus('Matches from the catalog, ranked for your request.', 'success');
+            } catch (error) {
+                setStatus(error.message || 'Recommendations are temporarily unavailable.', 'error');
+            } finally {
+                recommendationButton.disabled = false;
+                recommendationButton.querySelector('span').textContent = 'Find a movie';
+            }
+        });
+
+        fetchMovies();
     </script>
 </body>
 </html>
