@@ -49,6 +49,8 @@
         .section-heading h2, .recommend-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.025em; font-weight: 620; }
         .count { color: var(--muted); font-size: 12px; }
         .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+        fieldset.filters { min-width: 0; margin: 0 0 18px; padding: 0; border: 0; }
+        .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
         .filter-button { min-height: 35px; padding: 6px 13px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: #bac1ca; cursor: pointer; font-size: 12px; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
         .filter-button:hover { border-color: #53605e; color: var(--text); }
         .filter-button[aria-pressed="true"] { border-color: #527568; background: #20342d; color: #c1e1d4; }
@@ -81,7 +83,7 @@
         .result-rank { color: var(--accent-strong); font-size: 10px; font-weight: 700; }
         .result-card h3 { margin: 0; font-size: 13px; font-weight: 620; }
         .result-card p { margin: 0; color: #aebbb4; font-size: 12px; }
-        .status { min-height: 20px; margin: 11px 0 0; color: var(--muted); font-size: 12px; }
+        .status { display: block; min-height: 20px; margin: 11px 0 0; color: var(--muted); font-size: 12px; }
         .status[data-kind="error"] { color: var(--danger); }
         .status[data-kind="success"] { color: var(--accent-strong); }
         footer { border-top: 1px solid #252b32; color: #7e8791; font-size: 11px; }
@@ -139,12 +141,13 @@
                     <h2 id="catalog-title">The catalog</h2>
                     <span class="count" id="movieCount" aria-live="polite">Loading movies…</span>
                 </div>
-                <div class="filters" role="group" aria-label="Filter movies by category">
+                <fieldset class="filters">
+                    <legend class="visually-hidden">Filter movies by category</legend>
                     <button class="filter-button" type="button" data-category="" aria-pressed="true">All movies</button>
                     <button class="filter-button" type="button" data-category="drama" aria-pressed="false">Drama</button>
                     <button class="filter-button" type="button" data-category="comedy" aria-pressed="false">Comedy</button>
                     <button class="filter-button" type="button" data-category="thriller" aria-pressed="false">Thriller</button>
-                </div>
+                </fieldset>
                 <div class="movie-grid" id="movieList" aria-live="polite" aria-busy="true"></div>
             </section>
 
@@ -167,7 +170,7 @@
                     <h3 class="results-heading">Your matches</h3>
                     <div class="result-list" id="recommendationList"></div>
                 </div>
-                <p class="status" id="recommendationStatus" role="status" aria-live="polite"></p>
+                <output class="status" id="recommendationStatus" aria-live="polite"></output>
             </section>
         </div>
     </main>
@@ -306,7 +309,7 @@
             }
         });
 
-        fetchMovies();
+        await fetchMovies();
     </script>
 </body>
 </html>

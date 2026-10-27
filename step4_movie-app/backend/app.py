@@ -138,36 +138,49 @@ def parse_model_reasons(response, ranked):
     try:
         generated = response.json().get("response", "")
         parsed = json.loads(generated)
-        reasons = {}
-        title_by_id = {index: movie["title"] for index, (movie, _, _) in enumerate(ranked, start=1)}
-
-        explanations = parsed.get("explanations", {})
-        if isinstance(explanations, dict):
-            for candidate_id, reason in explanations.items():
-                if isinstance(candidate_id, str) and candidate_id.isdigit():
-                    title = title_by_id.get(int(candidate_id))
-                    if title and is_valid_model_reason(reason, title):
-                        reasons[title] = " ".join(reason.split())[:300]
-
-        # Accept title-based responses too, including output from older prompt formats.
-        items = parsed.get("recommendations", [])
-        if isinstance(items, list):
-            title_lookup = {title.casefold(): title for title in title_by_id.values()}
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                title = item.get("title")
-                if isinstance(title, str):
-                    title = title_lookup.get(title.strip().casefold())
-                candidate_id = item.get("id")
-                if not title and type(candidate_id) is int:
-                    title = title_by_id.get(candidate_id)
-                reason = item.get("reason")
-                if title and title not in reasons and is_valid_model_reason(reason, title):
-                    reasons[title] = " ".join(reason.split())[:300]
-        return reasons
+        if not isinstance(parsed, dict):
+            return {}
     except (AttributeError, TypeError, ValueError):
         return {}
+
+    title_by_id = {index: movie["title"] for index, (movie, _, _) in enumerate(ranked, start=1)}
+    title_lookup = {title.casefold(): title for title in title_by_id.values()}
+    reasons = {}
+    parse_indexed_reasons(parsed.get("explanations"), title_by_id, reasons)
+    parse_title_recommendations(parsed.get("recommendations"), title_by_id, title_lookup, reasons)
+    return reasons
+
+
+def store_valid_reason(reasons, title, reason):
+    """Keep a concise model reason only when it describes the selected movie."""
+    if title and title not in reasons and is_valid_model_reason(reason, title):
+        reasons[title] = " ".join(reason.split())[:300]
+
+
+def parse_indexed_reasons(explanations, title_by_id, reasons):
+    """Read the preferred ID-keyed explanation object."""
+    if not isinstance(explanations, dict):
+        return
+    for candidate_id, reason in explanations.items():
+        if not isinstance(candidate_id, str) or not candidate_id.isdigit():
+            continue
+        store_valid_reason(reasons, title_by_id.get(int(candidate_id)), reason)
+
+
+def parse_title_recommendations(items, title_by_id, title_lookup, reasons):
+    """Read title- or ID-based explanation arrays for compatibility."""
+    if not isinstance(items, list):
+        return
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title")
+        if isinstance(title, str):
+            title = title_lookup.get(title.strip().casefold())
+        candidate_id = item.get("id")
+        if not title and type(candidate_id) is int:
+            title = title_by_id.get(candidate_id)
+        store_valid_reason(reasons, title, item.get("reason"))
 
 
 def explanation_schema(candidate_count):
